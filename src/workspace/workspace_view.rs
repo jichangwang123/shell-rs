@@ -29,15 +29,15 @@ use crate::app::{
     CloseSettings, CloseTabs, CloseTerminal, CollapseAllGroups, ConnectGroup, ConnectHost,
     CopyAgentSkill, CopyHostAddress, CopyHostId, CopyTerminal, DeleteGroup, DeleteHost,
     DisconnectTerminal, DismissTerminalFind, DuplicateHost, DuplicateTerminal, EditHost,
-    ExpandAllGroups, ExplorerAction, ExplorerCommand, ExplorerShortcut, FindInTerminal,
-    FindNextInTerminal, FindPreviousInTerminal, FocusSearch, InstallAgentSkill, InstallCliCommand,
-    MaximizeWindow, MoveHostNode, NewChildGroup, NewGroup, NewHost, NewHostInGroup,
-    NewLocalTerminal, NewTemporaryConnection, OpenExplorer, OpenSettings, PasteTerminal,
-    QuickConnect, ReconnectTerminal, RefreshCliIntegration, RemoveAgentSkill, RemoveCliCommand,
-    RenameExplorer, RenameGroup, RenameTerminal, RestartLocalTerminal, RestoreWindow,
-    SelectAllTerminal, SendBreak, SetFileSizeFormat, ShowOrHideApp, ToggleHiddenFiles,
-    ToggleHostPanel, ToggleTheme, ToolKind, ZoomIn, ZoomOut, ZoomReset, ZoomTerminalIn,
-    ZoomTerminalOut, ZoomTerminalReset,
+    ExpandAllGroups, ExplorerAction, ExplorerCommand, ExplorerShortcut, ExportTerminal,
+    FindInTerminal, FindNextInTerminal, FindPreviousInTerminal, FocusSearch, InstallAgentSkill,
+    InstallCliCommand, MaximizeWindow, MoveHostNode, NewChildGroup, NewGroup, NewHost,
+    NewHostInGroup, NewLocalTerminal, NewTemporaryConnection, OpenExplorer, OpenSettings,
+    PasteTerminal, QuickConnect, ReconnectTerminal, RefreshCliIntegration, RemoveAgentSkill,
+    RemoveCliCommand, RenameExplorer, RenameGroup, RenameTerminal, RestartLocalTerminal,
+    RestoreWindow, SelectAllTerminal, SendBreak, SetFileSizeFormat, ShowOrHideApp,
+    ToggleHiddenFiles, ToggleHostPanel, ToggleTheme, ToolKind, ZoomIn, ZoomOut, ZoomReset,
+    ZoomTerminalIn, ZoomTerminalOut, ZoomTerminalReset,
 };
 use crate::cli::{CliIntegration, CliServer, IntegrationPaths, SshCliBackend};
 use crate::connection::{
@@ -90,7 +90,7 @@ use super::{
     recent_hosts::RecentHosts,
     sidebar::{SIDEBAR_WIDTH, Sidebar},
     status_bar::WorkspaceStatus,
-    title_bar::{render_sidebar_toggle, render_title_bar},
+    title_bar::render_title_bar,
     tool_sidebar::{ToolSidebar, render_tool_switch},
     tools::{TOOL_SIDEBAR_WIDTH, set_right_dock_open},
     window_state::{WindowState, window_placement},
@@ -2077,6 +2077,47 @@ impl Workspace {
         }
     }
 
+    fn on_export_terminal(
+        &mut self,
+        _: &ExportTerminal,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(terminal) = self.active_terminal(cx) else {
+            return;
+        };
+        let text = terminal.read(cx).export_text(cx);
+        let filename = chrono::Local::now()
+            .format("shellrs-%Y-%m-%d-%H-%M-%S.txt")
+            .to_string();
+        let directory = dirs::document_dir()
+            .or_else(dirs::home_dir)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let chosen = cx.prompt_for_new_path(&directory, Some(&filename));
+        cx.spawn_in(window, async move |_, cx| {
+            let result = match chosen.await {
+                Ok(Ok(Some(path))) => {
+                    cx.background_spawn(async move {
+                        std::fs::write(path, text).map_err(|error| error.to_string())
+                    })
+                    .await
+                }
+                Ok(Ok(None)) => return,
+                Ok(Err(error)) => Err(error.to_string()),
+                Err(error) => Err(error.to_string()),
+            };
+            if let Err(error) = result {
+                let _ = cx.update(|window, cx| {
+                    window.push_notification(
+                        Notification::error(error).title(t!("terminal.export.failed")),
+                        cx,
+                    );
+                });
+            }
+        })
+        .detach();
+    }
+
     fn on_paste_terminal(&mut self, _: &PasteTerminal, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(terminal) = self.active_terminal(cx) {
             terminal.update(cx, |terminal, cx| terminal.paste_clipboard(cx));
@@ -3014,6 +3055,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_copy_host_id))
             .on_action(cx.listener(Self::on_restart_local_terminal))
             .on_action(cx.listener(Self::on_copy_terminal))
+            .on_action(cx.listener(Self::on_export_terminal))
             .on_action(cx.listener(Self::on_paste_terminal))
             .on_action(cx.listener(Self::on_select_all_terminal))
             .on_action(cx.listener(Self::on_find_in_terminal))
@@ -3107,14 +3149,6 @@ impl Render for Workspace {
                 self.updater.read(cx).snapshot().badge(),
                 &self.focus_handle,
                 cx,
-            ))
-            .child(render_sidebar_toggle(
-                sidebar.is_some(),
-                self.dock_area
-                    .read(cx)
-                    .dock_size(DockPlacement::Left)
-                    .unwrap_or_default(),
-                &self.focus_handle,
             ))
             .child(
                 h_flex()

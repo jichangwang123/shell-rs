@@ -2,7 +2,7 @@
 //! the font and the size, links, the mouse for programs and their copies.
 
 use crate::support::*;
-use shellrs::app::{CopyTerminal, DuplicateTerminal, SelectAllTerminal, Shortcut};
+use shellrs::app::{CopyTerminal, DuplicateTerminal, ExportTerminal, SelectAllTerminal, Shortcut};
 use shellrs::terminal::RightClick;
 
 fn open_workspace_with_factory(
@@ -630,6 +630,43 @@ async fn select_all_takes_the_scrollback_too(cx: &mut TestAppContext) {
     });
     dispatch(cx, Box::new(SelectAllTerminal));
     assert_eq!(clipboard(cx), Some(everything));
+}
+
+#[gpui_kit::test]
+async fn export_terminal_saves_history_and_can_be_cancelled(cx: &mut TestAppContext) {
+    let lines: Vec<String> = (1..=80).map(|line| format!("line {line}")).collect();
+    let printed: &'static str = Box::leak(format!("{}\r\n", lines.join("\r\n")).into_boxed_str());
+    let (handle, _, _) = terminal_printing(cx, printed, "line 80").await;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("export.txt");
+    cx.update(|cx| cx.write_to_clipboard(ClipboardItem::new_string("clipboard".into())));
+
+    in_frame(cx, handle, |window, cx| {
+        window.dispatch_action(Box::new(ExportTerminal), cx);
+    });
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| Some(path.clone()));
+    cx.run_until_parked();
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        format!("run:1$ alpha.txt 会议纪要.md\n{}", lines.join("\n"))
+    );
+    cx.update(|cx| {
+        assert_eq!(
+            cx.read_from_clipboard()
+                .and_then(|item| item.text())
+                .as_deref(),
+            Some("clipboard")
+        );
+    });
+
+    in_frame(cx, handle, |window, cx| {
+        window.dispatch_action(Box::new(ExportTerminal), cx);
+    });
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| None);
+    cx.run_until_parked();
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
 }
 
 /// Below 复制, a remote terminal's menu copies its host's address and ID.

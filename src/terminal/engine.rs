@@ -575,6 +575,10 @@ impl TerminalEngine {
         self.runtime.term.lock().selection_to_string()
     }
 
+    pub fn export_text(&self) -> String {
+        export_text(&mut self.runtime.term.lock())
+    }
+
     /// The last lines of output, to draw again when the terminal next
     /// opens; `None` while a full-screen program has the screen.
     pub fn kept_output(&self) -> Option<Vec<u8>> {
@@ -1478,6 +1482,14 @@ fn select_all(term: &mut AlacrittyTerm) {
     });
 }
 
+fn export_text(term: &mut AlacrittyTerm) -> String {
+    let selection = term.selection.take();
+    select_all(term);
+    let text = term.selection_to_string().unwrap_or_default();
+    term.selection = selection;
+    text
+}
+
 fn sanitize_title(title: &str) -> Option<String> {
     let title: String = title
         .chars()
@@ -2069,6 +2081,29 @@ mod tests {
             term.selection_to_string().as_deref(),
             Some("one\n  two\nthree\nfour")
         );
+    }
+
+    #[test]
+    fn export_text_includes_history_without_changing_selection() {
+        let mut term = test_term(10, 3);
+        assert_eq!(export_text(&mut term), "");
+        feed(&mut term, b"one\r\n\x1b[31mtwo\x1b[0m\r\nthree\r\nfour");
+        term.selection = Some(Selection::new(
+            SelectionType::Simple,
+            Point::new(Line(1), Column(0)),
+            Side::Left,
+        ));
+        term.selection
+            .as_mut()
+            .unwrap()
+            .update(Point::new(Line(1), Column(2)), Side::Right);
+        let selected = term.selection_to_string();
+        assert!(term.history_size() > 0);
+        assert_eq!(export_text(&mut term), "one\ntwo\nthree\nfour");
+        assert_eq!(term.selection_to_string(), selected);
+        term.selection = None;
+        assert_eq!(export_text(&mut term), "one\ntwo\nthree\nfour");
+        assert!(term.selection.is_none());
     }
 
     #[test]

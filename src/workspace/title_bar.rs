@@ -1,5 +1,5 @@
 use gpui_kit::component::{
-    ActiveTheme as _, IconName, Selectable as _, Sizable as _, TITLE_BAR_HEIGHT, TitleBar,
+    ActiveTheme as _, IconName, Selectable as _, Sizable as _, TitleBar,
     button::{Button, ButtonGroup, ButtonVariants as _},
     h_flex,
 };
@@ -110,6 +110,7 @@ pub fn render_title_bar(
                 .px_2()
                 .gap_1()
                 .on_mouse_down(MouseButton::Left, no_drag)
+                .child(render_sidebar_toggle(sidebar.is_some(), target))
                 .child(
                     Button::new("title-quick-connect")
                         .ghost()
@@ -186,40 +187,24 @@ pub fn render_title_bar(
         )
 }
 
-/// Position against the workspace, whose left edge is also the dock's,
-/// rather than against TitleBar's platform-dependent traffic-light inset.
-/// The closed dock keeps its width, so the reopen button stays put.
-pub(super) fn render_sidebar_toggle(
-    open: bool,
-    sidebar_width: Pixels,
-    target: &FocusHandle,
-) -> impl IntoElement {
+fn render_sidebar_toggle(open: bool, target: &FocusHandle) -> Button {
     let target = target.clone();
     let label = if open {
         t!("workspace.title_bar.hide_sidebar")
     } else {
         t!("workspace.title_bar.show_sidebar")
     };
-    h_flex()
-        .absolute()
-        .top_0()
-        .left(sidebar_width)
-        .h(TITLE_BAR_HEIGHT)
-        .pl_2()
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .child(
-            Button::new("toggle-hosts")
-                .ghost()
-                .small()
-                .icon(if open {
-                    IconName::PanelLeft
-                } else {
-                    IconName::PanelLeftOpen
-                })
-                .tooltip(label.clone())
-                .accessibility_label(label)
-                .on_click(move |_, window, cx| {
-                    target.dispatch_action(&ToggleHostPanel, window, cx)
-                }),
-        )
+    Button::new("toggle-hosts")
+        .ghost()
+        .small()
+        .icon(if open {
+            IconName::PanelLeft
+        } else {
+            IconName::PanelLeftOpen
+        })
+        .tooltip(label.clone())
+        .accessibility_label(label)
+        .on_click(move |_, window, cx| {
+            target.dispatch_action(&ToggleHostPanel, window, cx)
+        })
 }

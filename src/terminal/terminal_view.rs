@@ -24,7 +24,7 @@ use gpui_kit::*;
 use unicode_width::UnicodeWidthChar as _;
 
 use crate::app::{
-    CatalogIcon, ClearTerminal, CopyTerminal, DismissTerminalFind, FindInTerminal,
+    CatalogIcon, ClearTerminal, CopyTerminal, DismissTerminalFind, ExportTerminal, FindInTerminal,
     FindNextInTerminal, FindPreviousInTerminal, PasteTerminal, SelectAllTerminal,
     ToggleComposePane,
 };
@@ -551,6 +551,10 @@ impl TerminalView {
         self.engine.read(cx).snapshot().visible_text()
     }
 
+    pub fn export_text(&self, cx: &App) -> String {
+        self.engine.read(cx).export_text()
+    }
+
     pub fn copy_selection(&self, cx: &mut App) {
         if let Some(text) = self
             .engine
@@ -1075,6 +1079,11 @@ impl TerminalView {
                     t!("terminal.menu.select_all"),
                     Icon::new(CatalogIcon::SquareDashedText),
                     Box::new(SelectAllTerminal),
+                )
+                .menu_with_icon(
+                    t!("terminal.menu.export"),
+                    Icon::new(CatalogIcon::Download),
+                    Box::new(ExportTerminal),
                 )
                 .separator()
                 .menu_with_icon(
