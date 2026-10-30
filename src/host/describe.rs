@@ -46,6 +46,7 @@ impl KindLabel for ProtocolKind {
             ProtocolKind::Ssh => t!("host.protocol.ssh"),
             ProtocolKind::Telnet => t!("host.protocol.telnet"),
             ProtocolKind::Serial => t!("host.protocol.serial"),
+            ProtocolKind::Shell => t!("host.protocol.shell"),
         }
     }
 }

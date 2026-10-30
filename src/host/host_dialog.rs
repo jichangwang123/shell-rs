@@ -94,7 +94,7 @@ fn default_port(protocol: ProtocolKind) -> Option<u16> {
     match protocol {
         ProtocolKind::Ssh => Some(SSH_PORT),
         ProtocolKind::Telnet => Some(TELNET_PORT),
-        ProtocolKind::Serial => None,
+        ProtocolKind::Serial | ProtocolKind::Shell => None,
     }
 }
 
@@ -274,6 +274,7 @@ pub struct HostForm {
     telnet_password_prompt: Entity<InputState>,
     /// A serial host's device and line.
     device: Entity<InputState>,
+    shell: Entity<InputState>,
     baud: Entity<InputState>,
     data_bits: Entity<SelectState<Vec<SharedString>>>,
     parity: Entity<SelectState<Vec<SharedString>>>,
@@ -353,6 +354,7 @@ impl HostForm {
         // the SSH or Telnet fields would show.
         let (address_value, device_value) = match protocol {
             ProtocolKind::Serial => (SharedString::default(), draft.address.clone()),
+            ProtocolKind::Shell => (SharedString::default(), SharedString::default()),
             _ => (draft.address.clone(), SharedString::default()),
         };
         let line = draft.protocol.serial().unwrap_or_default();
@@ -365,6 +367,7 @@ impl HostForm {
             InputState::new(window, cx)
                 .placeholder(match protocol {
                     ProtocolKind::Serial => t!("host.dialog.name_placeholder_serial"),
+                    ProtocolKind::Shell => t!("host.dialog.name_placeholder_shell"),
                     _ => t!("host.dialog.name_placeholder"),
                 })
                 .default_value(draft.name.clone())
@@ -381,6 +384,17 @@ impl HostForm {
                     example = example_device()
                 ))
                 .default_value(device_value)
+        });
+        let shell = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(t!("host.dialog.shell_placeholder"))
+                .default_value(if protocol.is_shell() {
+                    draft.address.to_string()
+                } else if cfg!(windows) {
+                    "powershell.exe".to_string()
+                } else {
+                    "/bin/sh".to_string()
+                })
         });
         let baud = cx.new(|cx| {
             InputState::new(window, cx)
@@ -631,7 +645,7 @@ impl HostForm {
         let own_password = match protocol {
             ProtocolKind::Ssh => Some(&fields),
             ProtocolKind::Telnet => Some(&telnet_fields),
-            ProtocolKind::Serial => None,
+            ProtocolKind::Serial | ProtocolKind::Shell => None,
         };
         if editing.is_some()
             && let Some(own_password) = own_password
@@ -688,6 +702,7 @@ impl HostForm {
             proxy_secret,
             notes,
             device,
+            shell,
             baud,
             data_bits,
             parity,
@@ -737,6 +752,7 @@ impl HostForm {
         self.protocol = protocol;
         let placeholder = match (protocol, self.temporary) {
             (ProtocolKind::Serial, _) => t!("host.dialog.name_placeholder_serial"),
+            (ProtocolKind::Shell, _) => t!("host.dialog.name_placeholder_shell"),
             (_, true) => t!("host.dialog.temporary_name_placeholder"),
             (_, false) => t!("host.dialog.name_placeholder"),
         };
@@ -1076,6 +1092,7 @@ impl HostForm {
         }
         let tester = self.tester.clone();
         let (test, success): (TestJob, _) = match self.protocol {
+            ProtocolKind::Shell => return,
             ProtocolKind::Serial => {
                 self.test_serial(window, cx);
                 return;
@@ -1244,8 +1261,8 @@ impl HostForm {
         if self.protocol == ProtocolKind::Telnet {
             return self.commit_telnet(window, cx);
         }
-        if self.protocol == ProtocolKind::Serial {
-            let draft = match self.serial_draft(self.selected_group(cx), cx) {
+        if self.protocol.is_serial() || self.protocol.is_shell() {
+            let draft = match self.local_draft(self.selected_group(cx), cx) {
                 Ok(draft) => draft,
                 Err(error) => {
                     window.push_notification(form_error_notification(error), cx);
@@ -1406,8 +1423,8 @@ impl HostForm {
                     .update(cx, |store, cx| store.insert_temporary(draft, password, cx)),
             );
         }
-        if self.protocol == ProtocolKind::Serial {
-            let draft = match self.serial_draft(None, cx) {
+        if self.protocol.is_serial() || self.protocol.is_shell() {
+            let draft = match self.local_draft(None, cx) {
                 Ok(draft) => draft,
                 Err(error) => {
                     window.push_notification(form_error_notification(error), cx);
@@ -1688,6 +1705,62 @@ impl HostForm {
                 Field::new()
                     .label(t!("host.dialog.flow_control"))
                     .child(Select::new(&self.flow).id("host-serial-flow").small()),
+            )
+    }
+
+    fn local_draft(&self, group: Option<GroupId>, cx: &App) -> Result<HostDraft, SharedString> {
+        if !self.protocol.is_shell() {
+            return self.serial_draft(group, cx);
+        }
+        let command = self.shell.read(cx).value().trim().to_string();
+        if command.is_empty() {
+            return Err(t!("host.dialog.shell_required"));
+        }
+        HostDraft::shell(self.name.read(cx).value(), command, group)
+            .with_notes(self.notes.read(cx).value())
+            .validated()
+            .map_err(|error| error.message())
+    }
+
+    fn shell_field(&self, cx: &mut Context<Self>) -> Field {
+        let form = cx.entity().downgrade();
+        let current = self.shell.read(cx).value();
+        let commands = if cfg!(windows) {
+            vec!["cmd.exe", "powershell.exe", "pwsh.exe", "wsl.exe"]
+        } else {
+            vec!["/bin/sh", "/bin/bash", "/bin/zsh", "fish"]
+        };
+        let menu = Button::new("host-shell-menu")
+            .ghost()
+            .xsmall()
+            .icon(IconName::ChevronDown)
+            .tooltip(t!("host.dialog.shell_choices"))
+            .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {
+                commands.iter().fold(menu, |menu, command| {
+                    let form = form.clone();
+                    let command = command.to_string();
+                    menu.item(
+                        PopupMenuItem::new(command.clone())
+                            .checked(current.as_ref() == command)
+                            .on_click(move |_, window, cx| {
+                                let _ = form.update(cx, |form, cx| {
+                                    form.shell.update(cx, |input, cx| {
+                                        input.set_value(command.clone(), window, cx)
+                                    });
+                                });
+                            }),
+                    )
+                })
+            });
+        Field::new()
+            .label(t!("host.dialog.shell"))
+            .required(true)
+            .col_span(4)
+            .child(
+                Input::new(&self.shell)
+                    .id("host-shell")
+                    .small()
+                    .suffix(menu),
             )
     }
 
@@ -1974,12 +2047,12 @@ fn available_jump_hosts(hosts: &[JumpHost], hops: &[Option<HostId>]) -> Vec<Jump
 
 impl Render for HostForm {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let serial = self.protocol == ProtocolKind::Serial;
+        let local = self.protocol.is_serial() || self.protocol.is_shell();
         // Whether the form saves a password of the host's own.
         let typed_password = match self.protocol {
             ProtocolKind::Ssh => self.source == AuthSource::Password,
             ProtocolKind::Telnet => self.telnet_password_typed(),
-            ProtocolKind::Serial => false,
+            ProtocolKind::Serial | ProtocolKind::Shell => false,
         };
         let keychain = self.fields.read(cx).keychain_available();
         let secret_note = match (keychain, self.protocol) {
@@ -2004,6 +2077,7 @@ impl Render for HostForm {
             ProtocolKind::Ssh => self.ssh_fields(form, cx),
             ProtocolKind::Telnet => self.telnet_fields(form, cx),
             ProtocolKind::Serial => self.serial_fields(form, cx),
+            ProtocolKind::Shell => form.child(self.shell_field(cx)),
         };
         // What only a saved host has.
         let form = if self.temporary {
@@ -2015,7 +2089,7 @@ impl Render for HostForm {
                     .col_span(4)
                     .child(Select::new(&self.group).small()),
             )
-            .when(!serial, |form| form.child(self.route_field(cx)))
+            .when(!local, |form| form.child(self.route_field(cx)))
             .child(
                 Field::new()
                     .label(t!("host.dialog.notes"))
@@ -2380,10 +2454,12 @@ pub fn open_host_dialog(
 /// The host form's footer: 「测试连接」 on the left, 「取消」 and the
 /// commit on the right. The new-host, edit-host and 临时连接 dialogs share it.
 fn form_footer(form: &Entity<HostForm>, commit_label: SharedString, cx: &App) -> DialogFooter {
+    let shell = form.read(cx).protocol.is_shell();
     DialogFooter::new()
         .w_full()
         .justify_between()
-        .child(
+        .when(shell, |footer| footer.justify_end())
+        .children((!shell).then(|| {
             Button::new("test-connection")
                 .label(t!("host.dialog.test_connection"))
                 .icon(crate::app::CatalogIcon::Plug)
@@ -2394,8 +2470,8 @@ fn form_footer(form: &Entity<HostForm>, commit_label: SharedString, cx: &App) ->
                     move |event, window, cx| {
                         form.update(cx, |form, cx| form.test_connection(event, window, cx));
                     }
-                }),
-        )
+                })
+        }))
         .child(
             h_flex()
                 .gap_2()

@@ -130,7 +130,7 @@ impl Core {
             let data = self.store.lock();
             let host = data
                 .saved_host(id)
-                .filter(|host| !host.is_serial())
+                .filter(|host| !host.is_local())
                 .ok_or(StoreError::NotFound)?;
             if !host.is_ssh() {
                 return Err(StoreError::NotSsh);

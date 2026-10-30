@@ -54,6 +54,129 @@ fn open_workspace_with_local_terminals(
 }
 
 #[gpui_kit::test]
+async fn a_shell_host_is_saved_edited_and_opened_with_its_command(cx: &mut TestAppContext) {
+    let local = Arc::new(FixedLocalTerminalTransportProvider::new(Arc::new(
+        FakeTerminalFactory::default(),
+    )));
+    let (handle, workspace) =
+        open_workspace_with_local_terminals(cx, local.clone(), size(px(1280.), px(800.)));
+    in_frame(cx, handle, |window, cx| window.click("new-host-panel", cx));
+    in_frame(cx, handle, |window, cx| {
+        window.within("host-protocol").click(3usize, cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        for id in [
+            "host-address",
+            "host-port",
+            "host-user",
+            "host-route",
+            "test-connection",
+        ] {
+            assert!(window.try_find(id).is_none(), "{id}");
+        }
+        window.click("host-name", cx);
+        window.input("local-shell", cx);
+        window.click("host-shell", cx);
+        window.press("secondary-a", cx);
+        window.input("wsl.exe -d Ubuntu", cx);
+        window.click("commit", cx);
+    });
+    wait_for_dialog_to_close(cx, handle).await;
+    let id = cx.update(|cx| {
+        let store = workspace.read(cx).store().read(cx);
+        let host = store
+            .hosts()
+            .iter()
+            .find(|host| host.name == "local-shell")
+            .unwrap();
+        assert!(host.is_shell());
+        assert_eq!(host.address.as_ref(), "wsl.exe -d Ubuntu");
+        assert!(host.credential.is_none());
+        host.id
+    });
+    in_frame(cx, handle, |window, cx| {
+        window.click(("host-row", id.0), cx);
+        window.dispatch_action(Box::new(EditHost(id)), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert_eq!(window.find("host-shell").value(), Some("wsl.exe -d Ubuntu"));
+        window.within("host-protocol").click(2usize, cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert!(
+            window
+                .find("host-serial-device")
+                .value()
+                .unwrap_or_default()
+                .is_empty()
+        );
+        window.within("host-protocol").click(3usize, cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert_eq!(window.find("host-shell").value(), Some("wsl.exe -d Ubuntu"));
+        window.click("cancel", cx);
+    });
+    wait_for_dialog_to_close(cx, handle).await;
+    in_frame(cx, handle, |window, cx| {
+        window.click(("host-row", id.0), cx);
+        window.dispatch_action(Box::new(ConnectHost(id)), cx);
+    });
+    cx.run_until_parked();
+    cx.wait_for(handle.into(), Duration::from_secs(2), |window, _| {
+        window
+            .try_find("status-connection")
+            .is_some_and(|status| status.label() == Some("已连接 local-shell"))
+    })
+    .await;
+    let launches = local.launches();
+    assert_eq!(launches.len(), 1);
+    assert_eq!(launches[0].shell.command(), Some("wsl.exe -d Ubuntu"));
+}
+
+#[gpui_kit::test]
+async fn quick_connect_can_start_a_shell_without_saving_a_host(cx: &mut TestAppContext) {
+    let local = Arc::new(FixedLocalTerminalTransportProvider::new(Arc::new(
+        FakeTerminalFactory::default(),
+    )));
+    let (handle, workspace) =
+        open_workspace_with_local_terminals(cx, local.clone(), size(px(1280.), px(800.)));
+    in_frame(cx, handle, |window, cx| {
+        window.click("temporary-connection", cx)
+    });
+    in_frame(cx, handle, |window, cx| {
+        window.within("host-protocol").click(3usize, cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert!(window.try_find("host-address").is_none());
+        window.click("host-name", cx);
+        window.input("quick-shell", cx);
+        window.click("host-shell", cx);
+        window.press("secondary-a", cx);
+        window.input("cmd.exe", cx);
+        window.click("commit", cx);
+    });
+    wait_for_dialog_to_close(cx, handle).await;
+    cx.wait_for(handle.into(), Duration::from_secs(2), |window, _| {
+        window
+            .try_find("status-connection")
+            .is_some_and(|status| status.label() == Some("已连接 quick-shell"))
+    })
+    .await;
+    assert_eq!(local.launches()[0].shell.command(), Some("cmd.exe"));
+    cx.update(|cx| {
+        assert!(
+            workspace
+                .read(cx)
+                .store()
+                .read(cx)
+                .hosts()
+                .iter()
+                .all(|host| host.name != "quick-shell")
+        );
+    });
+}
+
+#[gpui_kit::test]
 async fn creates_independent_local_terminals_from_button_and_shortcut(cx: &mut TestAppContext) {
     let factory = Arc::new(FakeTerminalFactory::default());
     let (handle, workspace) = open_workspace_with_factory(cx, factory.clone());

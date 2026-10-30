@@ -21,6 +21,7 @@ pub enum HostConnection {
     Ssh(HostLogin),
     Telnet(TelnetLogin),
     Serial(SerialLine),
+    Shell(String),
 }
 
 impl HostConnection {
@@ -36,7 +37,7 @@ impl HostConnection {
                     .and_then(|auto_login| auto_login.password.clone()),
                 &login.route,
             ),
-            HostConnection::Serial(_) => return Vec::new(),
+            HostConnection::Serial(_) | HostConnection::Shell(_) => return Vec::new(),
         };
         [password, route.proxy_password()]
             .into_iter()

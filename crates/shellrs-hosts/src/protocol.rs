@@ -17,6 +17,7 @@ pub enum Protocol {
     /// A serial port of this computer. The device is the host's address;
     /// its port, user, login and route play no part.
     Serial(SerialSettings),
+    Shell,
 }
 
 impl Protocol {
@@ -25,6 +26,7 @@ impl Protocol {
             Protocol::Ssh => ProtocolKind::Ssh,
             Protocol::Telnet(_) => ProtocolKind::Telnet,
             Protocol::Serial(_) => ProtocolKind::Serial,
+            Protocol::Shell => ProtocolKind::Shell,
         }
     }
 
@@ -38,6 +40,14 @@ impl Protocol {
 
     pub fn is_serial(&self) -> bool {
         matches!(self, Protocol::Serial(_))
+    }
+
+    pub fn is_shell(&self) -> bool {
+        matches!(self, Protocol::Shell)
+    }
+
+    pub fn is_local(&self) -> bool {
+        self.is_serial() || self.is_shell()
     }
 
     pub fn serial(&self) -> Option<SerialSettings> {
@@ -68,14 +78,16 @@ pub enum ProtocolKind {
     Ssh,
     Telnet,
     Serial,
+    Shell,
 }
 
 impl ProtocolKind {
     /// In the order the form lists them.
-    pub const ALL: [ProtocolKind; 3] = [
+    pub const ALL: [ProtocolKind; 4] = [
         ProtocolKind::Ssh,
         ProtocolKind::Telnet,
         ProtocolKind::Serial,
+        ProtocolKind::Shell,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -83,6 +95,7 @@ impl ProtocolKind {
             ProtocolKind::Ssh => "ssh",
             ProtocolKind::Telnet => "telnet",
             ProtocolKind::Serial => "serial",
+            ProtocolKind::Shell => "shell",
         }
     }
 
@@ -98,15 +111,19 @@ impl ProtocolKind {
         self == ProtocolKind::Serial
     }
 
+    pub fn is_shell(self) -> bool {
+        self == ProtocolKind::Shell
+    }
+
     /// Whether it has a network address, for 复制 IP: not a serial port.
     pub fn has_address(self) -> bool {
-        !self.is_serial()
+        !self.is_serial() && !self.is_shell()
     }
 
     /// Whether 发送 Break means something: a serial line holds it, Telnet
     /// sends its own break, and SSH has none.
     pub fn sends_break(self) -> bool {
-        !self.is_ssh()
+        self.is_serial() || self.is_telnet()
     }
 }
 

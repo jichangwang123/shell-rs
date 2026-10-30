@@ -136,6 +136,7 @@ impl RenderOnce for HostMark {
                     ProtocolKind::Ssh => t!("shared.host_mark.unknown_os"),
                     ProtocolKind::Telnet => t!("shared.host_mark.telnet"),
                     ProtocolKind::Serial => t!("shared.host_mark.serial"),
+                    ProtocolKind::Shell => t!("host.protocol.shell"),
                 },
             ),
         };

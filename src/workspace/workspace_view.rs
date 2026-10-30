@@ -362,6 +362,7 @@ impl Workspace {
             ssh: remote_terminal_provider,
             telnet: telnet_terminal_provider,
             serial: serial_terminal_provider,
+            local: local_terminal_provider.clone(),
         };
         let recent = cx.new(|cx| RecentHosts::new(store.clone(), focus_handle.clone(), cx));
         let compose =

@@ -14,7 +14,7 @@ On macOS, the close button at the top left of the window only hides ShellRS: ope
 
 Each item saved in the left sidebar is a host: an address, a port and a way to authenticate. To log in to the same machine as different users, save it as two hosts.
 
-“Protocol”, below the name, is SSH, Telnet or Serial. You can change it when editing a host: what the protocols’ forms share (the name, address, group, connection, notes and so on) carries over, and the rest takes the new protocol’s defaults. An SSH host that other hosts use as a jump host, or that port forwards go via, stays SSH. SSH hosts come first below; Telnet and serial hosts are at the end of this section.
+“Protocol”, below the name, is SSH, Telnet, Serial or Local shell. You can change it when editing a host: what the protocols’ forms share (the name, address, group, connection, notes and so on) carries over, and the rest takes the new protocol’s defaults. An SSH host that other hosts use as a jump host, or that port forwards go via, stays SSH. SSH hosts come first below; the other types are at the end of this section.
 
 The host dialog’s “Authentication” has three options:
 
@@ -80,6 +80,8 @@ Drag a group or host above or below another item of the same kind to reorder ite
 - **Menus**: a serial host’s context menu has no “Open SFTP” and no “Copy IP”. Hovering over it shows “device · 115200 8N1”.
 
 **Not yet available: opening ShellRS from a bastion host’s `telnet://` link, sending files with XMODEM / YMODEM (ZMODEM works: see “ZMODEM transfers” under “Terminal”), controlling the DTR / RTS lines, and on macOS, virtual serial ports made by programs such as socat (a pseudo-terminal takes no baud rate).**
+
+**Local shell hosts**: choose “Local shell” under “Protocol” when creating or editing a host, then enter a shell program or command. On Windows, the menu offers `cmd.exe`, `powershell.exe`, `pwsh.exe` and `wsl.exe`; you can also enter another program or arguments, such as `wsl.exe -d Ubuntu`. Quote program paths containing spaces with double quotes. A blank name uses the shell command. Saved shell hosts open from the host list or Find a host, running a terminal on this computer rather than SSH. They have no address, port, authentication, connection route or SFTP. Local shell hosts stay on this computer and do not sync. Quick connect also offers Local shell to start one without saving it.
 
 ## Quick connect
 

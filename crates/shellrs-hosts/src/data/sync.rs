@@ -408,7 +408,7 @@ impl HostData {
                 edited_ms: credential.edited_ms,
             });
         }
-        for host in self.hosts.iter().filter(|host| !host.is_serial()) {
+        for host in self.hosts.iter().filter(|host| !host.is_local()) {
             let protocol = match &host.protocol {
                 Protocol::Telnet(telnet) => sync::Protocol::Telnet(sync::TelnetData {
                     user_prompt: some_text(&telnet.user_prompt),
@@ -549,7 +549,7 @@ impl HostData {
 
     /// A saved host that syncs: not a serial one.
     fn synced_host(&self, id: HostId) -> Option<&Host> {
-        self.saved_host(id).filter(|host| !host.is_serial())
+        self.saved_host(id).filter(|host| !host.is_local())
     }
 
     /// Where each secret that syncs is: the passwords the hosts that sync
@@ -574,7 +574,7 @@ impl HostData {
                 place,
             });
         };
-        for host in self.hosts.iter().filter(|host| !host.is_serial()) {
+        for host in self.hosts.iter().filter(|host| !host.is_local()) {
             for secret in self.connection_of(host).password_entries() {
                 let (kind, endpoint) = match &secret {
                     SecretRef::Password { user, host, port } => {
@@ -1738,6 +1738,8 @@ mod tests {
         let mut a = Device::new('a');
         let mut b = Device::new('b');
         fill(&mut a);
+        a.store
+            .insert(HostDraft::shell("local shell", "wsl.exe -d Ubuntu", None));
         a.sync(&vault, &keys);
         b.sync(&vault, &keys);
         assert_eq!(b.held(), a.held());
@@ -1746,7 +1748,7 @@ mod tests {
             let store = &b.store;
             // The serial host stayed on its computer; this device's own of
             // the rest came as new.
-            assert!(store.hosts().iter().all(|host| !host.is_serial()));
+            assert!(store.hosts().iter().all(|host| !host.is_local()));
             assert!(store.forwards().iter().all(|rule| !rule.auto_start));
             let web = store.hosts().iter().find(|h| h.name == "web").unwrap();
             assert!(store.bookmarks(web.id, BookmarkSide::Local).is_empty());

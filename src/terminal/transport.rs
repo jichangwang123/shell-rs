@@ -194,6 +194,7 @@ pub struct HostTerminalTransports {
     pub ssh: SharedRemoteTerminalTransportProvider,
     pub telnet: SharedTelnetTerminalTransportProvider,
     pub serial: SharedSerialTerminalTransportProvider,
+    pub local: SharedLocalTerminalTransportProvider,
 }
 
 impl HostTerminalTransports {
@@ -202,6 +203,9 @@ impl HostTerminalTransports {
             HostConnection::Ssh(login) => self.ssh.factory_for(login),
             HostConnection::Telnet(login) => self.telnet.factory_for(login),
             HostConnection::Serial(line) => self.serial.factory_for(line),
+            HostConnection::Shell(command) => self
+                .local
+                .factory_for(&LocalLaunch::new(LocalShell::new(command))),
         }
     }
 }

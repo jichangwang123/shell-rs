@@ -291,7 +291,7 @@ impl HostStore {
     /// the computer they were made on and are not among them.
     pub fn hosts(&self) -> Vec<Host> {
         let data = self.shared.lock();
-        let mut hosts: Vec<_> = data.hosts().iter().filter(|h| !h.is_serial()).collect();
+        let mut hosts: Vec<_> = data.hosts().iter().filter(|h| !h.is_local()).collect();
         hosts.sort_by_key(|host| (host.sort_order, host.id));
         hosts.into_iter().map(Host::of).collect()
     }
@@ -304,7 +304,7 @@ impl HostStore {
     pub fn recent_hosts(&self) -> Vec<Host> {
         let data = self.shared.lock();
         data.recent_hosts()
-            .filter(|host| !host.is_serial())
+            .filter(|host| !host.is_local())
             .map(Host::of)
             .collect()
     }
@@ -578,7 +578,7 @@ impl HostStore {
 
 /// A saved host the app sees: not a serial one.
 fn saved_host(data: &HostData, id: u64) -> Option<&hosts::Host> {
-    data.saved_host(HostId(id)).filter(|host| !host.is_serial())
+    data.saved_host(HostId(id)).filter(|host| !host.is_local())
 }
 
 /// A password or passphrase as saving changes it, kept out of sight.

@@ -41,7 +41,7 @@ fn from_sql(id: i64) -> u64 {
 /// command snippets, 15 the serial hosts, 16 the Telnet hosts, 17 each
 /// host's right sidebar, 18 the saved local terminals, 19 their titles, 20
 /// what sync needs.
-const SCHEMA_VERSION: i64 = 20;
+const SCHEMA_VERSION: i64 = 21;
 
 /// The whole schema, as a new database gets it.
 ///
@@ -153,7 +153,7 @@ CREATE TABLE hosts (
     notes             TEXT NOT NULL DEFAULT '',
     os                TEXT,
     last_connected_at INTEGER,
-    protocol          TEXT NOT NULL DEFAULT 'ssh' CHECK (protocol IN ('ssh', 'serial', 'telnet')),
+    protocol          TEXT NOT NULL DEFAULT 'ssh' CHECK (protocol IN ('ssh', 'serial', 'telnet', 'shell')),
     serial_baud       INTEGER CHECK (serial_baud > 0)
         CHECK ((protocol = 'serial') = (serial_baud IS NOT NULL)),
     serial_data_bits  INTEGER CHECK (serial_data_bits BETWEEN 5 AND 8)
@@ -290,7 +290,7 @@ enum Step {
 ///
 /// A step is history: it says what that version's change was, and stays as
 /// written when `SCHEMA` changes again.
-const STEPS: [(i64, Step); 7] = [
+const STEPS: [(i64, Step); 8] = [
     (
     13,
     // The command snippets.
@@ -391,7 +391,71 @@ COMMIT;",
     ),
     // What sync needs.
     (19, Step::Code(add_sync)),
+    (20, Step::Code(add_shell)),
 ];
+
+fn add_shell(connection: &Connection) -> rusqlite::Result<()> {
+    connection.pragma_update(None, "foreign_keys", false)?;
+    let result = connection.execute_batch(SHELL_HOSTS);
+    if result.is_err() {
+        let _ = connection.execute_batch("ROLLBACK");
+    }
+    connection.pragma_update(None, "foreign_keys", true)?;
+    result
+}
+
+const SHELL_HOSTS: &str = "BEGIN;
+CREATE TEMP TABLE hosts_20 AS SELECT * FROM main.hosts;
+DROP TABLE main.hosts;
+CREATE TABLE hosts (
+    id                INTEGER PRIMARY KEY,
+    public_id         TEXT UNIQUE,
+    group_id          INTEGER REFERENCES groups(id) ON DELETE CASCADE,
+    sort_order        INTEGER NOT NULL DEFAULT 0,
+    name              TEXT NOT NULL CHECK (name <> ''),
+    address           TEXT NOT NULL CHECK (address <> ''),
+    port              INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
+    auth              TEXT NOT NULL CHECK (auth IN ('password', 'no-password', 'credential')),
+    username          TEXT,
+    credential_id     INTEGER REFERENCES credentials(id),
+    route             TEXT NOT NULL DEFAULT 'direct' CHECK (route IN ('direct', 'jump', 'proxy')),
+    proxy_kind        TEXT CHECK (proxy_kind IN ('http', 'socks5')),
+    proxy_host        TEXT,
+    proxy_port        INTEGER CHECK (proxy_port BETWEEN 1 AND 65535),
+    proxy_username    TEXT,
+    notes             TEXT NOT NULL DEFAULT '',
+    os                TEXT,
+    last_connected_at INTEGER,
+    protocol          TEXT NOT NULL DEFAULT 'ssh' CHECK (protocol IN ('ssh', 'serial', 'telnet', 'shell')),
+    serial_baud       INTEGER CHECK (serial_baud > 0)
+        CHECK ((protocol = 'serial') = (serial_baud IS NOT NULL)),
+    serial_data_bits  INTEGER CHECK (serial_data_bits BETWEEN 5 AND 8)
+        CHECK ((protocol = 'serial') = (serial_data_bits IS NOT NULL)),
+    serial_parity     TEXT CHECK (serial_parity IN ('none', 'odd', 'even'))
+        CHECK ((protocol = 'serial') = (serial_parity IS NOT NULL)),
+    serial_stop_bits  INTEGER CHECK (serial_stop_bits IN (1, 2))
+        CHECK ((protocol = 'serial') = (serial_stop_bits IS NOT NULL)),
+    serial_flow       TEXT CHECK (serial_flow IN ('none', 'rts-cts', 'xon-xoff'))
+        CHECK ((protocol = 'serial') = (serial_flow IS NOT NULL)),
+    telnet_user_prompt TEXT CHECK (telnet_user_prompt <> '')
+        CHECK (protocol = 'telnet' OR telnet_user_prompt IS NULL),
+    telnet_pass_prompt TEXT CHECK (telnet_pass_prompt <> '')
+        CHECK (protocol = 'telnet' OR telnet_pass_prompt IS NULL),
+    sidebar_tool      TEXT,
+    edited_ms         INTEGER NOT NULL DEFAULT 0,
+    CHECK ((auth = 'credential') = (credential_id IS NOT NULL)),
+    CHECK ((auth = 'credential') = (username IS NULL)),
+    CHECK ((route = 'proxy') = (proxy_kind IS NOT NULL)),
+    CHECK ((proxy_kind IS NULL) = (proxy_host IS NULL)
+        AND (proxy_kind IS NULL) = (proxy_port IS NULL)),
+    CHECK (proxy_kind IS NOT NULL OR proxy_username IS NULL)
+) STRICT;
+INSERT INTO hosts SELECT * FROM hosts_20;
+DROP TABLE hosts_20;
+CREATE INDEX hosts_group_id ON hosts(group_id);
+CREATE INDEX hosts_credential_id ON hosts(credential_id);
+PRAGMA user_version = 21;
+COMMIT;";
 
 /// Version 16, the Telnet hosts: `protocol` takes `telnet`, and the two
 /// `telnet_*` columns come after the serial ones. SQLite cannot change the
@@ -833,6 +897,7 @@ impl HostDatabase {
                 host.sidebar_tool = sidebar_tool.map(SharedString::from);
                 host.edited_ms = from_sql(row.get(26)?);
                 match protocol.as_str() {
+                    "shell" => host.protocol = Protocol::Shell,
                     "serial" => host.protocol = Protocol::Serial(serial.settings()),
                     "telnet" => host.protocol = Protocol::Telnet(telnet),
                     _ => {}
@@ -3029,6 +3094,42 @@ INSERT INTO snippets (id, category_id, name, command) VALUES (1, 1, 'ps', 'docke
             );
             host = next;
         }
+    }
+
+    #[test]
+    fn shell_hosts_survive_reopening_and_version_20_migrates() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shellrs.db");
+        {
+            let old = Connection::open(&path).unwrap();
+            old.execute_batch(&format!(
+                "BEGIN;\n{SCHEMA_15}\nPRAGMA user_version = 15;\nCOMMIT;"
+            ))
+            .unwrap();
+            add_telnet(&old).unwrap();
+            for (_, step) in &STEPS[3..7] {
+                match step {
+                    Step::Sql(sql) => old.execute_batch(sql).unwrap(),
+                    Step::Code(step) => step(&old).unwrap(),
+                }
+            }
+        }
+        let db = HostDatabase::open(&path).unwrap();
+        assert!(dir.path().join("shellrs.db.v20.bak").exists());
+        let fresh = HostDatabase::in_memory().unwrap();
+        assert_eq!(schema_of(&db.connection), schema_of(&fresh.connection));
+        let host = Host::new(
+            HostId(1),
+            HostDraft::shell("Ubuntu", "wsl.exe -d Ubuntu", None),
+        );
+        db.insert_host(&host).unwrap();
+        drop(db);
+        let db = HostDatabase::open(&path).unwrap();
+        let loaded = db.load().unwrap().hosts.remove(0);
+        assert_eq!(loaded.protocol, Protocol::Shell);
+        assert_eq!(loaded.address.as_ref(), "wsl.exe -d Ubuntu");
+        assert!(loaded.credential.is_none());
+        assert_eq!(loaded.user.as_ref(), "");
     }
 
     #[test]

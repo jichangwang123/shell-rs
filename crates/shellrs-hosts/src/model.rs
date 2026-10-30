@@ -408,6 +408,7 @@ impl Host {
             Protocol::Ssh => format!("{}@{}:{}", self.user, self.address, self.port),
             Protocol::Telnet(_) => format!("{}:{}", self.address, self.port),
             Protocol::Serial(settings) => format!("{} · {}", self.address, settings.summary()),
+            Protocol::Shell => self.address.to_string(),
         }
     }
 
@@ -421,6 +422,14 @@ impl Host {
 
     pub fn is_serial(&self) -> bool {
         self.protocol.is_serial()
+    }
+
+    pub fn is_shell(&self) -> bool {
+        self.protocol.is_shell()
+    }
+
+    pub fn is_local(&self) -> bool {
+        self.protocol.is_local()
     }
 
     /// Whether the address is a literal IP address rather than a name, so a
@@ -571,6 +580,17 @@ impl HostDraft {
         }
     }
 
+    pub fn shell(
+        name: impl Into<SharedString>,
+        command: impl Into<SharedString>,
+        group: Option<GroupId>,
+    ) -> Self {
+        Self {
+            protocol: Protocol::Shell,
+            ..Self::new(name, command, SSH_PORT, "", AuthKind::NoPassword, group)
+        }
+    }
+
     /// Log in with a saved credential instead of `auth`. The store takes the
     /// user name from the credential when the draft is saved.
     pub fn with_credential(mut self, credential: CredentialId) -> Self {
@@ -604,6 +624,18 @@ impl HostDraft {
     pub fn validated(mut self) -> Result<Self, HostDraftError> {
         self.name = self.name.trim().to_string().into();
         self.address = self.address.trim().to_string().into();
+        if self.protocol.is_shell() {
+            if self.address.is_empty() {
+                return Err(HostDraftError::Address);
+            }
+            let name = if self.name.is_empty() {
+                self.address.clone()
+            } else {
+                self.name.clone()
+            };
+            let notes = self.notes.trim().to_string();
+            return Ok(Self::shell(name, self.address, self.group).with_notes(notes));
+        }
         if let Protocol::Serial(settings) = self.protocol {
             return self.validated_serial(settings);
         }
@@ -723,6 +755,31 @@ mod tests {
             .validated()
             .unwrap_err();
         assert_eq!(error, HostDraftError::Port);
+    }
+
+    #[test]
+    fn a_shell_host_keeps_its_command_without_network_login() {
+        let draft = HostDraft::shell(" ", " wsl.exe -d Ubuntu ", Some(GroupId(2)))
+            .with_credential(CredentialId(1))
+            .with_route(Route::Jump(vec![Some(HostId(3))]))
+            .with_notes(" local ")
+            .validated()
+            .unwrap();
+        assert_eq!(draft.name.as_ref(), "wsl.exe -d Ubuntu");
+        assert_eq!(draft.address.as_ref(), "wsl.exe -d Ubuntu");
+        assert_eq!(draft.protocol, Protocol::Shell);
+        assert_eq!(draft.group, Some(GroupId(2)));
+        assert_eq!(draft.notes.as_ref(), "local");
+        assert_eq!(draft.user.as_ref(), "");
+        assert_eq!(draft.auth, AuthKind::NoPassword);
+        assert!(draft.credential.is_none());
+        assert_eq!(draft.route, Route::Direct);
+        assert!(!draft.protocol.kind().has_address());
+        assert!(!draft.protocol.kind().sends_break());
+        assert_eq!(
+            HostDraft::shell("empty", " ", None).validated(),
+            Err(HostDraftError::Address)
+        );
     }
 
     #[test]

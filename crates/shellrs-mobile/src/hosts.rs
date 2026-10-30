@@ -378,7 +378,9 @@ impl Host {
                     user_prompt: settings.user_prompt.to_string(),
                     password_prompt: settings.password_prompt.to_string(),
                 },
-                hosts::Protocol::Ssh | hosts::Protocol::Serial(_) => HostProtocol::Ssh,
+                hosts::Protocol::Ssh | hosts::Protocol::Serial(_) | hosts::Protocol::Shell => {
+                    HostProtocol::Ssh
+                }
             },
             address: host.address.to_string(),
             port: host.port,

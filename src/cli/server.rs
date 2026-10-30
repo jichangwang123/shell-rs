@@ -954,7 +954,7 @@ fn find_ssh(shared: &Shared, id: &str) -> Result<CliTarget, CliError> {
             ErrorCode::NotSsh,
             t!("cli.server.not_ssh_telnet", name = name),
         )),
-        ProtocolKind::Serial => Err(CliError::new(
+        ProtocolKind::Serial | ProtocolKind::Shell => Err(CliError::new(
             ErrorCode::NotSsh,
             t!("cli.server.not_ssh", name = name),
         )),

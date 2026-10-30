@@ -81,6 +81,7 @@ fn protocol_choice(protocol: &Protocol) -> ProtocolChoice {
         Protocol::Ssh => ProtocolChoice::Ssh,
         Protocol::Telnet(_) => ProtocolChoice::Telnet,
         Protocol::Serial(_) => ProtocolChoice::Serial,
+        Protocol::Shell => ProtocolChoice::Shell,
     }
 }
 
@@ -151,12 +152,12 @@ pub fn host_details(host: &Host, store: &HostStore) -> HostDetails {
         group: group_path(host.group, store),
         protocol: protocol_choice(&host.protocol),
         host: Some(host.address.to_string()),
-        port: Some(host.port),
-        user: Some(host.user.to_string()),
-        auth: Some(auth),
+        port: (!host.is_shell()).then_some(host.port),
+        user: (!host.is_shell()).then(|| host.user.to_string()),
+        auth: (!host.is_shell()).then_some(auth),
         credential,
         password_saved: None,
-        route: Some(route),
+        route: (!host.is_shell()).then_some(route),
         serial: None,
         telnet: host.protocol.telnet().map(|telnet| TelnetDetails {
             user_prompt: prompt(&telnet.user_prompt),
@@ -209,7 +210,7 @@ pub fn host_secrets(host: &Host, store: &HostStore) -> HostSecrets {
                 .filter(|_| own),
             proxy: login.route.proxy_password(),
         },
-        HostConnection::Serial(_) => HostSecrets::default(),
+        HostConnection::Serial(_) | HostConnection::Shell(_) => HostSecrets::default(),
     }
 }
 
@@ -431,6 +432,9 @@ pub fn plan_host(
     if fields.serial.is_some() {
         return Err(bad(t!("cli.host.serial_on_ssh")));
     }
+    if protocol == ProtocolChoice::Shell {
+        return plan_shell_host(fields, base, store);
+    }
     let mut draft = base.unwrap_or_else(|| {
         if telnet {
             HostDraft::telnet("", "", TELNET_PORT, None)
@@ -586,11 +590,13 @@ fn converted(host: &Host, protocol: ProtocolChoice) -> HostDraft {
         ProtocolChoice::Ssh => HostDraft::new("", "", SSH_PORT, "", AuthKind::default(), None),
         ProtocolChoice::Telnet => HostDraft::telnet("", "", TELNET_PORT, None),
         ProtocolChoice::Serial => HostDraft::serial("", "", SerialSettings::default(), None),
+        ProtocolChoice::Shell => HostDraft::shell("", "", None),
     };
     draft.name = old.name;
     draft.group = old.group;
     draft.notes = old.notes;
-    if host.kind().has_address() && protocol != ProtocolChoice::Serial {
+    if host.kind().has_address() && matches!(protocol, ProtocolChoice::Ssh | ProtocolChoice::Telnet)
+    {
         draft.address = old.address;
         draft.route = old.route;
         if ![SSH_PORT, TELNET_PORT].contains(&old.port) {
@@ -602,6 +608,46 @@ fn converted(host: &Host, protocol: ProtocolChoice) -> HostDraft {
 
 /// [`plan_host`] for a serial host: its name, device, line, group and
 /// notes, and nothing of an SSH host's. `base` is the host to change.
+fn plan_shell_host(
+    fields: HostFields,
+    base: Option<HostDraft>,
+    store: &HostStore,
+) -> Result<HostPlan, CliError> {
+    if fields.port.is_some()
+        || fields.user.is_some()
+        || fields.auth.is_some()
+        || fields.route.is_some()
+        || fields.credential.is_some()
+        || fields.password.is_some()
+    {
+        return Err(bad(t!("cli.host.network_fields_on_shell")));
+    }
+    let mut draft = base.unwrap_or_else(|| HostDraft::shell("", "", None));
+    if let Some(command) = fields.host {
+        draft.address = command.into();
+    }
+    if let Some(name) = fields.name {
+        draft.name = name.into();
+    }
+    if let Some(notes) = fields.notes {
+        draft.notes = notes.into();
+    }
+    if draft.address.trim().is_empty() {
+        return Err(bad(t!("host.dialog.shell_required")));
+    }
+    let group = match fields.group {
+        None => GroupPlan::Existing(draft.group),
+        Some(None) => GroupPlan::Existing(None),
+        Some(Some(path)) => resolve_group(store, &path)?,
+    };
+    Ok(HostPlan {
+        draft: draft.validated().map_err(|error| bad(error.message()))?,
+        group,
+        password: None,
+        proxy_password: None,
+    })
+}
+
 fn plan_serial_host(
     fields: HostFields,
     base: Option<HostDraft>,

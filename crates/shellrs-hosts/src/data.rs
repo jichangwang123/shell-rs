@@ -1427,6 +1427,7 @@ impl HostData {
                 device: host.address.to_string(),
                 settings: *settings,
             }),
+            Protocol::Shell => HostConnection::Shell(host.address.to_string()),
         }
     }
 
@@ -2312,7 +2313,7 @@ impl HostData {
 /// credential that is not there logs in on its own. A Telnet host is kept
 /// as an SSH one: its credential is its 自动登录's.
 fn normalized(credentials: &[Credential], mut draft: HostDraft) -> HostDraft {
-    if draft.protocol.is_serial() {
+    if draft.protocol.is_local() {
         // Nothing of a login: no credential to count it as a user of, no
         // jump hosts to keep alive.
         draft.credential = None;

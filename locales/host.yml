@@ -1,4 +1,22 @@
 _version: 2
+host.protocol.shell:
+  zh-CN: 本地 Shell
+  en: Local shell
+host.dialog.shell:
+  zh-CN: Shell
+  en: Shell
+host.dialog.shell_placeholder:
+  zh-CN: Shell 程序或命令（可带参数）
+  en: Shell program or command with optional arguments
+host.dialog.shell_choices:
+  zh-CN: 常用 Shell
+  en: Common shells
+host.dialog.shell_required:
+  zh-CN: 请输入 Shell 程序或命令
+  en: Enter a shell program or command
+host.dialog.name_placeholder_shell:
+  zh-CN: 留空使用 Shell 命令
+  en: Leave blank to use the shell command
 
 # 主机: the saved hosts, their groups and the store that keeps them.
 

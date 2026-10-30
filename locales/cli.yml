@@ -1,4 +1,7 @@
 _version: 2
+cli.host.network_fields_on_shell:
+  zh-CN: 本地 Shell 不使用端口、用户名、认证、凭据或连接方式
+  en: Local shells do not use ports, usernames, authentication, credentials, or connection routes
 
 # 外部 CLI: what the `shellrs` command prints, and the messages the app
 # sends back to it. CLI output uses plain ASCII quotes and apostrophes, so

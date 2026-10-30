@@ -269,6 +269,7 @@ impl HostInfo {
         match (self.protocol, &self.line) {
             (ProtocolChoice::Serial, Some(line)) => format!("{} · {line}", self.host),
             (ProtocolChoice::Telnet, _) => format!("{}:{}", self.host, self.port),
+            (ProtocolChoice::Shell, _) => self.host.clone(),
             _ => format!("{}@{}:{}", self.user, self.host, self.port),
         }
     }
@@ -439,6 +440,7 @@ pub enum ProtocolChoice {
     Ssh,
     Telnet,
     Serial,
+    Shell,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
