@@ -260,9 +260,7 @@ async fn quick_connect_finds_saved_hosts_and_connects_one(cx: &mut TestAppContex
             assert_eq!(pair[0].size, pair[1].size);
         }
         assert!(
-            (controls[1].left() - controls[0].right() - window.rem_size() * 0.25)
-                .abs()
-                <= px(1.)
+            (controls[1].left() - controls[0].right() - window.rem_size() * 0.25).abs() <= px(1.)
         );
         assert_eq!(
             window.find("title-quick-connect").label(),

@@ -204,7 +204,5 @@ fn render_sidebar_toggle(open: bool, target: &FocusHandle) -> Button {
         })
         .tooltip(label.clone())
         .accessibility_label(label)
-        .on_click(move |_, window, cx| {
-            target.dispatch_action(&ToggleHostPanel, window, cx)
-        })
+        .on_click(move |_, window, cx| target.dispatch_action(&ToggleHostPanel, window, cx))
 }
