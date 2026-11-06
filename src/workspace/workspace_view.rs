@@ -412,6 +412,7 @@ impl Workspace {
         // Before the first frame, so a dark theme never starts out light.
         crate::settings::apply(settings.read(cx).settings(), window, cx);
 
+        let sidebar_open = settings.read(cx).settings().window.remember_sidebar;
         let mut sidebar_width = dock_area.read(cx).dock_size(DockPlacement::Left);
         let mut subscriptions = vec![
             // What the saved terminals show, for the next launch to draw: the
@@ -624,6 +625,9 @@ impl Workspace {
             // Dock geometry is an API boundary that takes `Pixels`.
             area.set_dock_size(DockPlacement::Left, SIDEBAR_WIDTH, window, cx);
             area.set_dock_collapsible(DockPlacement::Left, true, window, cx);
+            if !sidebar_open {
+                area.toggle_dock(DockPlacement::Left, window, cx);
+            }
             area.set_dock(
                 DockPlacement::Right,
                 DockLayout::tabs().panel_view(panel_handle(tools.clone()), cx),
@@ -2468,8 +2472,12 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let showing = !self.dock_area.read(cx).is_dock_open(DockPlacement::Left);
         self.dock_area.update(cx, |area, cx| {
             area.toggle_dock(DockPlacement::Left, window, cx);
+        });
+        self.settings.update(cx, |settings, cx| {
+            settings.update(|settings| settings.window.remember_sidebar = showing, cx)
         });
         cx.notify();
     }
@@ -2550,6 +2558,9 @@ impl Workspace {
         if !self.dock_area.read(cx).is_dock_open(DockPlacement::Left) {
             self.dock_area.update(cx, |area, cx| {
                 area.toggle_dock(DockPlacement::Left, window, cx);
+            });
+            self.settings.update(cx, |settings, cx| {
+                settings.update(|settings| settings.window.remember_sidebar = true, cx)
             });
         }
         self.sidebar

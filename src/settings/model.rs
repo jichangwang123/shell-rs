@@ -213,6 +213,8 @@ pub struct WindowSettings {
     pub remember_size: bool,
     /// 记住窗口位置: where it was, on which screen.
     pub remember_position: bool,
+    /// 记住侧栏: whether the left sidebar was visible at the last close.
+    pub remember_sidebar: bool,
 }
 
 impl Default for WindowSettings {
@@ -220,6 +222,7 @@ impl Default for WindowSettings {
         Self {
             remember_size: true,
             remember_position: true,
+            remember_sidebar: true,
         }
     }
 }

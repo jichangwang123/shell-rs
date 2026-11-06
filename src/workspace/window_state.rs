@@ -277,6 +277,7 @@ mod tests {
         WindowSettings {
             remember_size,
             remember_position,
+            remember_sidebar: true,
         }
     }
 

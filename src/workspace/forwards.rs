@@ -39,6 +39,9 @@ impl Workspace {
             self.dock_area.update(cx, |area, cx| {
                 area.toggle_dock(DockPlacement::Left, window, cx);
             });
+            self.settings().update(cx, |settings, cx| {
+                settings.update(|settings| settings.window.remember_sidebar = true, cx)
+            });
         }
         self.sidebar
             .update(cx, |sidebar, cx| sidebar.show(mode, window, cx));

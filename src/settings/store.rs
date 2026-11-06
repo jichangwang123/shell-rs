@@ -192,6 +192,23 @@ mod tests {
     }
 
     #[test]
+    fn sidebar_visibility_is_saved_and_old_settings_default_to_visible() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let (mut store, _) = SettingsStore::load(path.clone());
+        store.update_unnotified(|settings| settings.window.remember_sidebar = false);
+
+        let (reloaded, problem) = SettingsStore::load(path);
+        assert!(problem.is_none());
+        assert!(!reloaded.settings().window.remember_sidebar);
+
+        let old: AppSettings =
+            serde_json::from_str(r#"{"window":{"remember_size":true,"remember_position":true}}"#)
+                .unwrap();
+        assert!(old.window.remember_sidebar);
+    }
+
+    #[test]
     fn kubernetes_is_hidden_until_turned_on() {
         for json in [r#"{}"#, r#"{"sidebar_tools":{}}"#] {
             let settings: AppSettings = serde_json::from_str(json).unwrap();
