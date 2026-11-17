@@ -11,6 +11,8 @@ icon_assets!(
     ExtraIcons,
     [
         Server,
+        Cable,
+        Globe,
         Gpu,
         Layers,
         LogOut,
