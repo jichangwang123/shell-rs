@@ -1440,8 +1440,10 @@ fn the_start_page_has_no_tool_switch(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn the_tool_sidebar_drags_wider_but_never_narrower_than_it_opens(cx: &mut TestAppContext) {
-    let (handle, _) = open_workspace(cx);
+fn the_tool_sidebar_can_shrink_and_collapses_at_its_minimum(cx: &mut TestAppContext) {
+    use gpui_kit::component::dock::DockPlacement;
+
+    let (handle, workspace) = open_workspace(cx);
     in_frame(cx, handle, |window, cx| {
         window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx)
     });
@@ -1497,13 +1499,35 @@ fn the_tool_sidebar_drags_wider_but_never_narrower_than_it_opens(cx: &mut TestAp
         "{opened:?} → {wider:?}"
     );
 
-    // Dragged back past where it opened: it stops there.
+    // Dragging back is no longer snapped to the opening width.
     drag(cx, point(wider.left() + px(2.), wider.center().y), 250.);
     let narrowed = bounds(cx);
     assert!(
-        (narrowed.size.width - opened.size.width).abs() < px(1.),
+        narrowed.size.width < opened.size.width,
         "{opened:?} → {narrowed:?}"
     );
+
+    let title_bounds = in_frame(cx, handle, |window, _| window.find("toggle-hosts").bounds());
+    drag(
+        cx,
+        point(narrowed.left() + px(2.), narrowed.center().y),
+        500.,
+    );
+    in_frame(cx, handle, |window, cx| {
+        let area = workspace.read(cx).dock_area().read(cx);
+        assert!(
+            !area.is_dock_open(DockPlacement::Right),
+            "right dock remained open at {:?}, rendered {:?}",
+            area.dock_size(DockPlacement::Right),
+            window.try_find(sidebar).map(|element| element.bounds())
+        );
+        assert_eq!(window.find("toggle-hosts").bounds(), title_bounds);
+    });
+    in_frame(cx, handle, |window, cx| {
+        window.dispatch_action(Box::new(ToggleToolSidebar), cx)
+    });
+    let restored = bounds(cx);
+    assert!((restored.size.width - narrowed.size.width).abs() < px(1.));
 }
 
 /// The title-bar toggle sits just before quick connect, including
@@ -1573,15 +1597,41 @@ fn the_sidebar_toggle_stays_before_quick_connect(cx: &mut TestAppContext) {
         aligned(cx);
     }
     cx.simulate_window_resize(handle.into(), size(px(1000.), px(700.)));
-    aligned(cx);
-    // The panel can be made wider, then dragged back only as far as the
-    // width it opened at. The title-bar toggle stays beside quick connect.
+    let (button_at_size, panel_at_size) = aligned(cx);
+    // The panel can be made wider and narrower without moving the title-bar
+    // toggle away from quick connect.
     in_frame(cx, handle, |window, cx| {
         let wide = window.find("workspace-sidebar").bounds();
         let from = point(wide.right() - px(2.), wide.center().y);
-        window.drag(from, point(panel.right() - px(100.), from.y), cx);
+        window.drag(from, point(panel_at_size.right() - px(100.), from.y), cx);
     });
     let (narrowed_button, narrowed_panel) = aligned(cx);
-    assert_eq!(narrowed_panel.size.width, panel.size.width);
-    assert_eq!(narrowed_button.left(), opened.left());
+    assert!(narrowed_panel.size.width < panel_at_size.size.width);
+    assert_eq!(narrowed_button.left(), button_at_size.left());
+
+    let title_bounds = in_frame(cx, handle, |window, _| window.find("toggle-hosts").bounds());
+    in_frame(cx, handle, |window, cx| {
+        let from = point(narrowed_panel.right() - px(2.), narrowed_panel.center().y);
+        window.drag(from, point(from.x - px(500.), from.y), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert!(
+            !workspace
+                .read(cx)
+                .dock_area()
+                .read(cx)
+                .is_dock_open(DockPlacement::Left)
+        );
+        assert_eq!(window.find("toggle-hosts").bounds(), title_bounds);
+        window.click("toggle-hosts", cx);
+    });
+    aligned(cx);
+    let restored_width = in_frame(cx, handle, |_, cx| {
+        workspace
+            .read(cx)
+            .dock_area()
+            .read(cx)
+            .dock_size(DockPlacement::Left)
+    });
+    assert_eq!(restored_width, Some(narrowed_panel.size.width));
 }

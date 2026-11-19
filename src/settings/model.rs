@@ -206,6 +206,9 @@ mod tool_by_key {
 
 /// 应用 → 窗口: what the next launch restores of the main window. Both on
 /// until the user turns them off.
+pub const SIDEBAR_MIN_WIDTH_RANGE: std::ops::RangeInclusive<u16> = 100..=200;
+pub const SIDEBAR_WIDTH_RANGE: std::ops::RangeInclusive<u16> = 100..=2000;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WindowSettings {
@@ -215,6 +218,12 @@ pub struct WindowSettings {
     pub remember_position: bool,
     /// 记住侧栏: whether the left sidebar was visible at the last close.
     pub remember_sidebar: bool,
+    /// 侧栏拖动到此宽度时自动收起。
+    pub sidebar_min_width: u16,
+    /// 左侧栏的上次展开宽度，像素。
+    pub left_sidebar_width: u16,
+    /// 右侧栏的上次展开宽度，像素。
+    pub right_sidebar_width: u16,
 }
 
 impl Default for WindowSettings {
@@ -223,6 +232,9 @@ impl Default for WindowSettings {
             remember_size: true,
             remember_position: true,
             remember_sidebar: true,
+            sidebar_min_width: *SIDEBAR_MIN_WIDTH_RANGE.start(),
+            left_sidebar_width: 280,
+            right_sidebar_width: 320,
         }
     }
 }
@@ -520,6 +532,18 @@ impl AppSettings {
             *PARALLEL_TRANSFERS_RANGE.start(),
             *PARALLEL_TRANSFERS_RANGE.end(),
         );
+        self.window.sidebar_min_width = self.window.sidebar_min_width.clamp(
+            *SIDEBAR_MIN_WIDTH_RANGE.start(),
+            *SIDEBAR_MIN_WIDTH_RANGE.end(),
+        );
+        self.window.left_sidebar_width = self
+            .window
+            .left_sidebar_width
+            .clamp(*SIDEBAR_WIDTH_RANGE.start(), *SIDEBAR_WIDTH_RANGE.end());
+        self.window.right_sidebar_width = self
+            .window
+            .right_sidebar_width
+            .clamp(*SIDEBAR_WIDTH_RANGE.start(), *SIDEBAR_WIDTH_RANGE.end());
         self.local_terminal.shell = self
             .local_terminal
             .shell
@@ -873,6 +897,29 @@ mod tests {
             };
             assert_eq!(settings.normalized().transfers.parallel, kept);
         }
+    }
+
+    #[test]
+    fn window_settings_remember_sidebar_widths_and_bound_the_minimum() {
+        let old: AppSettings =
+            serde_json::from_str(r#"{"window":{"remember_sidebar":false}}"#).unwrap();
+        assert!(!old.window.remember_sidebar);
+        assert_eq!(old.window.left_sidebar_width, 280);
+        assert_eq!(old.window.right_sidebar_width, 320);
+
+        let settings = AppSettings {
+            window: WindowSettings {
+                sidebar_min_width: 50,
+                left_sidebar_width: 50,
+                right_sidebar_width: 2500,
+                ..WindowSettings::default()
+            },
+            ..AppSettings::default()
+        }
+        .normalized();
+        assert_eq!(settings.window.sidebar_min_width, 100);
+        assert_eq!(settings.window.left_sidebar_width, 100);
+        assert_eq!(settings.window.right_sidebar_width, 2000);
     }
 
     #[test]

@@ -43,8 +43,8 @@ use super::shortcuts_editor::{ShortcutsEditor, shortcut_groups};
 use super::sidebar_tools::sidebar_tools_group;
 use super::terminal_themes::{app_follows_item, terminal_theme_item};
 use super::{
-    AppSettings, Choice, INTERFACE_FONT_SIZE_RANGE, NotificationSettings, SettingsStore,
-    WindowSettings,
+    AppSettings, Choice, INTERFACE_FONT_SIZE_RANGE, NotificationSettings, SIDEBAR_MIN_WIDTH_RANGE,
+    SettingsStore, WindowSettings,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -911,6 +911,21 @@ fn application_groups(panel: &SettingsPanel, _: &App) -> Vec<SettingGroup> {
                     ),
                 )
                 .description(t!("settings.window.remember_position_description")),
+                SettingItem::new(
+                    t!("settings.window.sidebar_min_width"),
+                    number_field(
+                        store,
+                        NumberFieldOptions {
+                            min: *SIDEBAR_MIN_WIDTH_RANGE.start() as f64,
+                            max: *SIDEBAR_MIN_WIDTH_RANGE.end() as f64,
+                            step: 10.,
+                        },
+                        |settings| settings.window.sidebar_min_width as f32,
+                        |settings, width| settings.window.sidebar_min_width = width.round() as u16,
+                    )
+                    .default_value(WindowSettings::default().sidebar_min_width as f64),
+                )
+                .description(t!("settings.window.sidebar_min_width_description")),
             ]),
     ]
 }

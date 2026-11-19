@@ -278,6 +278,7 @@ mod tests {
             remember_size,
             remember_position,
             remember_sidebar: true,
+            ..WindowSettings::default()
         }
     }
 

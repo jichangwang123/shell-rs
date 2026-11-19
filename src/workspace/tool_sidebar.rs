@@ -5,7 +5,9 @@ use gpui_kit::component::{
     ActiveTheme as _, Icon, IconName, Placement, Selectable as _, Sizable as _,
     button::{Button, ButtonVariants as _},
     dock::{BasePanel, Panel, PanelControl, PanelEvent},
-    h_flex, v_flex,
+    h_flex,
+    scroll::ScrollableElement as _,
+    v_flex,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -582,7 +584,14 @@ impl Render for ToolSidebar {
                     ToolKind::Gpu => self.gpu.clone().into_any_element(),
                     ToolKind::Projects => self.projects.clone().into_any_element(),
                 };
-                sidebar.child(div().flex_1().min_h_0().child(panel))
+                sidebar.child(
+                    div()
+                        .id("tool-sidebar-content")
+                        .flex_1()
+                        .min_h_0()
+                        .child(panel)
+                        .overflow_x_scrollbar(),
+                )
             })
     }
 }

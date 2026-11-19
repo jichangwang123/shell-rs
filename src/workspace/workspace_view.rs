@@ -88,11 +88,11 @@ use super::{
     compose_pane::ComposePane,
     dock_skin::WorkspaceDockSkin,
     recent_hosts::RecentHosts,
-    sidebar::{SIDEBAR_WIDTH, Sidebar},
+    sidebar::Sidebar,
     status_bar::WorkspaceStatus,
     title_bar::render_title_bar,
     tool_sidebar::{ToolSidebar, render_tool_switch},
-    tools::{TOOL_SIDEBAR_WIDTH, set_right_dock_open},
+    tools::set_right_dock_open,
     window_state::{WindowState, window_placement},
 };
 
@@ -412,18 +412,16 @@ impl Workspace {
         // Before the first frame, so a dark theme never starts out light.
         crate::settings::apply(settings.read(cx).settings(), window, cx);
 
-        let sidebar_open = settings.read(cx).settings().window.remember_sidebar;
+        let window_settings = settings.read(cx).settings().window;
+        let sidebar_open = window_settings.remember_sidebar;
         let mut sidebar_width = dock_area.read(cx).dock_size(DockPlacement::Left);
         let mut subscriptions = vec![
             // What the saved terminals show, for the next launch to draw: the
             // workspace goes with its window, as ShellRS quits (and on
             // Windows and Linux as the window closes, before it quits).
             cx.on_release(|this, cx| this.keep_on_close(cx)),
-            // Neither sidebar is dragged narrower than it opens, nor
-            // 撰写窗格 lower than a line or two.
+            // 撰写窗格 cannot be dragged lower than a line or two.
             cx.observe_in(&dock_area, window, move |this, area, window, cx| {
-                this.hold_sidebar_width(window, cx);
-                this.hold_tool_sidebar_width(window, cx);
                 this.hold_compose_height(window, cx);
                 // The title-bar toggle follows the left dock's current width.
                 let width = area.read(cx).dock_size(DockPlacement::Left);
@@ -623,7 +621,12 @@ impl Workspace {
                 cx,
             );
             // Dock geometry is an API boundary that takes `Pixels`.
-            area.set_dock_size(DockPlacement::Left, SIDEBAR_WIDTH, window, cx);
+            area.set_dock_size(
+                DockPlacement::Left,
+                px(window_settings.left_sidebar_width as f32),
+                window,
+                cx,
+            );
             area.set_dock_collapsible(DockPlacement::Left, true, window, cx);
             if !sidebar_open {
                 area.toggle_dock(DockPlacement::Left, window, cx);
@@ -634,7 +637,12 @@ impl Workspace {
                 window,
                 cx,
             );
-            area.set_dock_size(DockPlacement::Right, TOOL_SIDEBAR_WIDTH, window, cx);
+            area.set_dock_size(
+                DockPlacement::Right,
+                px(window_settings.right_sidebar_width as f32),
+                window,
+                cx,
+            );
             // Hidden until a tool is picked; see `set_right_dock_open`.
             set_right_dock_open(area, false, window, cx);
             area.set_dock_collapsible(DockPlacement::Right, false, window, cx);
@@ -910,6 +918,68 @@ impl Workspace {
     /// tab closes, the page fills it and takes the focus the tab held, so
     /// window-level shortcuts keep a dispatch path.
     fn on_layout_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let window_settings = self.settings.read(cx).settings().window;
+        let minimum_width = px(window_settings.sidebar_min_width as f32);
+        let left_width = self.dock_area.read(cx).dock_size(DockPlacement::Left);
+        let right_width = self.dock_area.read(cx).dock_size(DockPlacement::Right);
+        let left_is_open = self.dock_area.read(cx).is_dock_open(DockPlacement::Left);
+        let right_is_open = self.dock_area.read(cx).is_dock_open(DockPlacement::Right);
+        let left_is_narrow = left_is_open && left_width.is_some_and(|width| width <= minimum_width);
+        let right_is_narrow =
+            right_is_open && right_width.is_some_and(|width| width <= minimum_width);
+
+        let remembered_left_width = left_is_open
+            .then_some(left_width)
+            .flatten()
+            .filter(|width| *width > minimum_width)
+            .map(|width| width.as_f32().round() as u16);
+        let remembered_right_width = right_is_open
+            .then_some(right_width)
+            .flatten()
+            .filter(|width| *width > minimum_width)
+            .map(|width| width.as_f32().round() as u16);
+        if left_is_narrow || right_is_narrow {
+            self.dock_area.update(cx, |area, cx| {
+                if left_is_narrow {
+                    area.set_dock_size(
+                        DockPlacement::Left,
+                        px(window_settings.left_sidebar_width as f32),
+                        window,
+                        cx,
+                    );
+                    area.toggle_dock(DockPlacement::Left, window, cx);
+                }
+                if right_is_narrow {
+                    area.set_dock_size(
+                        DockPlacement::Right,
+                        px(window_settings.right_sidebar_width as f32),
+                        window,
+                        cx,
+                    );
+                }
+            });
+            if right_is_narrow {
+                self.hide_tool_sidebar(window, cx);
+            }
+        }
+        if left_is_narrow || remembered_left_width.is_some() || remembered_right_width.is_some() {
+            self.settings.update(cx, |settings, cx| {
+                settings.update(
+                    |settings| {
+                        if let Some(width) = remembered_left_width {
+                            settings.window.left_sidebar_width = width;
+                        }
+                        if let Some(width) = remembered_right_width {
+                            settings.window.right_sidebar_width = width;
+                        }
+                        if left_is_narrow {
+                            settings.window.remember_sidebar = false;
+                        }
+                    },
+                    cx,
+                )
+            });
+        }
         let empty = self.dock_area.read(cx).is_empty(DockPlacement::Center, cx);
         let was_empty = self.skin.is_center_empty();
         self.skin.set_center_empty(empty, cx);
